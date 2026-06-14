@@ -1,0 +1,87 @@
+x-airflow-common: &airflow-common
+  image: apache/airflow:2.9.1-python3.11
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres:5432/airflow
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW__CORE__FERNET_KEY}
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: 5432
+    POSTGRES_DB: ${POSTGRES_DB:-workforce}
+    POSTGRES_USER: ${POSTGRES_USER:-postgres}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    AIRTABLE_API_KEY: ${AIRTABLE_API_KEY:-}
+    AIRTABLE_BASE_ID: ${AIRTABLE_BASE_ID:-}
+    SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+  volumes:
+    - ./1-ingestion/airflow/dags:/opt/airflow/dags/ingestion
+    - ./2-llm-eval/airflow/dags:/opt/airflow/dags/llm_eval
+    - ./3-governance/airflow/dags:/opt/airflow/dags/governance
+    - ./4-dashboard/airflow/dags:/opt/airflow/dags/dashboard
+    - airflow-logs:/opt/airflow/logs
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  # ── Postgres (shared OLTP store + pgvector) ──────────────────
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_DB: ${POSTGRES_DB:-workforce}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./1-ingestion/docker/init.sql:/docker-entrypoint-initdb.d/01_init.sql
+      - ./2-llm-eval/docker/init_llm_schema.sql:/docker-entrypoint-initdb.d/02_llm.sql
+      - ./4-dashboard/docker/init_dashboard_schema.sql:/docker-entrypoint-initdb.d/03_dashboard.sql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      retries: 10
+
+  # ── Trino (OLAP / analytical SQL) ────────────────────────────
+  trino:
+    image: trinodb/trino:438
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./1-ingestion/docker/trino/catalog:/etc/trino/catalog
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # ── Airflow ───────────────────────────────────────────────────
+  airflow-init:
+    <<: *airflow-common
+    command: >
+      bash -c "airflow db migrate &&
+               airflow users create
+               --username admin
+               --password ${AIRFLOW_ADMIN_PASSWORD:-admin}
+               --firstname Admin
+               --lastname User
+               --role Admin
+               --email admin@example.com"
+    restart: "no"
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - "8081:8080"
+    restart: unless-stopped
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  airflow-logs:

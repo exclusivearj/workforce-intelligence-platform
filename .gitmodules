@@ -1,0 +1,12 @@
+[submodule "1-ingestion"]
+	path = 1-ingestion
+	url = https://github.com/exclusivearj/workforce-intelligence-platform-ingestion.git
+[submodule "2-llm-eval"]
+	path = 2-llm-eval
+	url = https://github.com/exclusivearj/workforce-intelligence-platform-llm-eval.git
+[submodule "3-governance"]
+	path = 3-governance
+	url = https://github.com/exclusivearj/workforce-intelligence-platform-governance.git
+[submodule "4-dashboard"]
+	path = 4-dashboard
+	url = https://github.com/exclusivearj/workforce-intelligence-platform-dashboard.git

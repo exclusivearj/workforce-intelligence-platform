@@ -1,0 +1,38 @@
+name: platform CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-unit:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        module: ["1-ingestion", "2-llm-eval", "3-governance", "4-dashboard"]
+    defaults:
+      run:
+        working-directory: ${{ matrix.module }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+      - name: Lint
+        run: ruff check src/
+      - name: Unit tests
+        run: |
+          if [ -d tests/unit ]; then
+            pytest tests/unit/ -v --cov=src --cov-fail-under=80
+          else
+            pytest tests/ -v --cov=src --cov-fail-under=80
+          fi
+        env:
+          EMBEDDING_BACKEND: local
