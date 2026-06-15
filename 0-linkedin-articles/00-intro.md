@@ -6,8 +6,6 @@
 
 Over the past six weekends, I built a complete system for turning messy HR data into clear, trustworthy answers about a workforce — things like *how is headcount trending, why are people leaving, and where do candidates drop out of our hiring process.*
 
-I didn't build it because someone assigned it. I built it because there was a gap between the work I'd done and the work I wanted to do next, and the most honest way to close that gap was to build something real.
-
 This is the introduction to a five-part series where I walk through how it works, the decisions behind it, and the surprises along the way. I'll explain things in plain language first, then go deeper for the technical folks.
 
 ---
