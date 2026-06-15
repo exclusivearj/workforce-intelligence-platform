@@ -1,3 +1,5 @@
+![workforce-intelligence-platform banner](assets/00-intro-banner.png)
+
 # workforce-intelligence-platform
 
 A reference architecture for People Analytics data infrastructure, built as a portfolio
