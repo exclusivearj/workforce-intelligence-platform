@@ -15,11 +15,23 @@ x-airflow-common: &airflow-common
     AIRTABLE_API_KEY: ${AIRTABLE_API_KEY:-}
     AIRTABLE_BASE_ID: ${AIRTABLE_BASE_ID:-}
     SLACK_WEBHOOK_URL: ${SLACK_WEBHOOK_URL:-}
+    # ── hr_ingestion DAG wiring ────────────────────────────────
+    # Make the 1-ingestion `src` package importable and install its runtime deps
+    # at container startup (no custom image). Point the connectors at the shared
+    # mock-hr service and tell the dbt task where the mounted project lives.
+    PYTHONPATH: /opt/ingestion
+    _PIP_ADDITIONAL_REQUIREMENTS: "httpx tenacity pydantic pyairtable faker psycopg2-binary dbt-core dbt-postgres"
+    WORKDAY_BASE_URL: http://mock-hr:5001
+    WORKDAY_API_TOKEN: mock-token
+    GREENHOUSE_BASE_URL: http://mock-hr:5001
+    GREENHOUSE_API_KEY: mock-key
+    INGESTION_DBT_DIR: /opt/ingestion/dbt
   volumes:
     - ./1-ingestion/airflow/dags:/opt/airflow/dags/ingestion
     - ./2-llm-eval/airflow/dags:/opt/airflow/dags/llm_eval
     - ./3-governance/airflow/dags:/opt/airflow/dags/governance
     - ./4-dashboard/airflow/dags:/opt/airflow/dags/dashboard
+    - ./1-ingestion:/opt/ingestion          # src package + dbt project for the DAG
     - airflow-logs:/opt/airflow/logs
   depends_on:
     postgres:
@@ -29,6 +41,9 @@ services:
   # ── Postgres (shared OLTP store + pgvector) ──────────────────
   postgres:
     image: pgvector/pgvector:pg16
+    # Preload pg_stat_statements so the governance audit scanner has query history to
+    # scan (CREATE EXTENSION alone is not enough — the library must be loaded at startup).
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements"]
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
@@ -37,6 +52,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/init_airflow.sql:/docker-entrypoint-initdb.d/00_airflow.sql
       - ./1-ingestion/docker/init.sql:/docker-entrypoint-initdb.d/01_init.sql
       - ./2-llm-eval/docker/init_llm_schema.sql:/docker-entrypoint-initdb.d/02_llm.sql
       - ./4-dashboard/docker/init_dashboard_schema.sql:/docker-entrypoint-initdb.d/03_dashboard.sql
@@ -56,18 +72,38 @@ services:
       postgres:
         condition: service_healthy
 
+  # ── Mock HR APIs (Workday workers + Greenhouse applications) ──
+  # Backs the hr_ingestion DAG's extract tasks with a real HTTP stack. Installs
+  # flask + faker at startup and serves both sources from one port.
+  mock-hr:
+    image: python:3.11-slim
+    working_dir: /opt/ingestion
+    command:
+      - bash
+      - -c
+      - "pip install --no-cache-dir flask faker && PYTHONPATH=/opt/ingestion python docker/mock_workday_server.py"
+    volumes:
+      - ./1-ingestion:/opt/ingestion
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
+
   # ── Airflow ───────────────────────────────────────────────────
   airflow-init:
     <<: *airflow-common
-    command: >
-      bash -c "airflow db migrate &&
-               airflow users create
-               --username admin
-               --password ${AIRFLOW_ADMIN_PASSWORD:-admin}
-               --firstname Admin
-               --lastname User
-               --role Admin
-               --email admin@example.com"
+    # List form with a literal block: avoids the folded-scalar pitfall where
+    # over-indented continuation lines keep their newlines and break `bash -c`.
+    # User creation is tolerant so re-running init on an existing DB is a no-op.
+    command:
+      - bash
+      - -c
+      - |
+        airflow db migrate
+        airflow users create \
+          --username admin \
+          --password "${AIRFLOW_ADMIN_PASSWORD:-admin}" \
+          --firstname Admin --lastname User --role Admin \
+          --email admin@example.com || true
     restart: "no"
 
   airflow-webserver:

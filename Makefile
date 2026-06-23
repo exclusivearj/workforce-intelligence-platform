@@ -32,7 +32,7 @@ help:
 
 # ── Shared infrastructure ──────────────────────────────────────
 infra-up:
-	docker compose up -d postgres trino airflow-init airflow-webserver airflow-scheduler
+	docker compose up -d postgres trino mock-hr airflow-init airflow-webserver airflow-scheduler
 	@echo "Waiting for Postgres to be ready..."
 	@until docker compose exec postgres pg_isready -U postgres > /dev/null 2>&1; do sleep 1; done
 	@echo "Infrastructure up. Airflow UI: http://localhost:8081"
