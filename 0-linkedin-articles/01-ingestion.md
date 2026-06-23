@@ -125,7 +125,7 @@ At portfolio scale, this is over-engineered. At production scale — where you m
 The `hr_ingestion` DAG runs daily at 6am:
 
 ```
-extract_workday ──┐
+extract_workday ───┐
 extract_greenhouse ├──► detect_schema_drift ──► run_dbt_models ──► alert_on_pii_change ──► trigger_llm_eval
 extract_airtable ──┘
 ```
